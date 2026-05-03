@@ -31,7 +31,7 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 # ══════════════════════════════════════════
 #  ⚙️  НАЛАШТУВАННЯ
 # ══════════════════════════════════════════
-BOT_TOKEN = os.getenv("BOT_TOKEN", "8682554539:AAHWE1F_epaNf0n1DbgP2RbfH4ayX4qPC1Y")   # ← токен від @BotFather
+BOT_TOKEN = os.getenv("BOT_TOKEN", "ВАШ_ТОКЕН_ТУТ")   # ← токен від @BotFather
 ADMIN_PASSWORD = "school2025"        # ← пароль для адміна
 DATA_FILE      = "school_data.json"
 
