@@ -8,6 +8,13 @@
 ║  Команди адміна:                        ║
 ║    /admin ПАРОЛЬ  — увійти як адмін     ║
 ╚══════════════════════════════════════════╝
+
+Python 3.14+:
+  • вбудовані дженерики: dict[str, ...], list[...], tuple[...]
+  • union через |  замість Optional / Union
+  • match / case  для обробки callback-даних
+  • f-string без escape-обмежень (PEP 701)
+  • annotated assignment без forward-ref
 """
 
 import asyncio
@@ -15,6 +22,7 @@ import json
 import logging
 import os
 from datetime import datetime
+from aiohttp import web
 
 from aiogram import Bot, Dispatcher, F, Router
 from aiogram.client.default import DefaultBotProperties
@@ -31,9 +39,9 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 # ══════════════════════════════════════════
 #  ⚙️  НАЛАШТУВАННЯ
 # ══════════════════════════════════════════
-BOT_TOKEN = os.getenv("BOT_TOKEN", "ВАШ_ТОКЕН_ТУТ")   # ← токен від @BotFather
-ADMIN_PASSWORD = "school2025"        # ← пароль для адміна
-DATA_FILE      = "school_data.json"
+BOT_TOKEN: str      = os.getenv("BOT_TOKEN", "8682554539:AAHNAzeFUv7odcNr_qxh49DWdg54EamBMug")  # ← токен від @BotFather
+ADMIN_PASSWORD: str = "school2025"   # ← пароль для адміна (змінити!)
+DATA_FILE: str      = "school_data.json"
 
 logging.basicConfig(
     level=logging.INFO,
@@ -44,7 +52,8 @@ log = logging.getLogger(__name__)
 # ══════════════════════════════════════════
 #  📋  РОЗКЛАД ДЗВІНКІВ
 # ══════════════════════════════════════════
-BELLS = [
+# Python 3.14: list[dict[str, int | str]] — без імпорту typing
+BELLS: list[dict[str, int | str]] = [
     {"n": 1, "s": "08:30", "e": "09:15", "b": 10},
     {"n": 2, "s": "09:25", "e": "10:10", "b": 10},
     {"n": 3, "s": "10:20", "e": "11:05", "b": 20},
@@ -54,9 +63,9 @@ BELLS = [
     {"n": 7, "s": "14:30", "e": "15:15", "b": 0},
 ]
 
-DAYS = ["Понеділок", "Вівторок", "Середа", "Четвер", "П'ятниця"]
+DAYS: list[str] = ["Понеділок", "Вівторок", "Середа", "Четвер", "П'ятниця"]
 
-DAY_EMOJI = {
+DAY_EMOJI: dict[str, str] = {
     "Понеділок": "1️⃣",
     "Вівторок":  "2️⃣",
     "Середа":    "3️⃣",
@@ -64,7 +73,7 @@ DAY_EMOJI = {
     "П'ятниця":  "5️⃣",
 }
 
-DEFAULT_SCHEDULE = {
+DEFAULT_SCHEDULE: dict[str, list[str]] = {
     "Понеділок": ["Математика", "Українська мова", "Фізика", "Хімія", "Біологія", "Англійська", "Фізкультура"],
     "Вівторок":  ["Англійська", "Математика", "Географія", "Укр. Літ-ра", "Фізика", "Хімія", "Трудове навч."],
     "Середа":    ["Фізика", "Біологія", "Математика", "Англійська", "Географія", "Укр. мова", "Інформатика"],
@@ -77,7 +86,7 @@ DEFAULT_SCHEDULE = {
 # ══════════════════════════════════════════
 def load_data() -> dict:
     if os.path.exists(DATA_FILE):
-        with open(DATA_FILE, "r", encoding="utf-8") as f:
+        with open(DATA_FILE, encoding="utf-8") as f:
             return json.load(f)
     return {
         "schedule":   DEFAULT_SCHEDULE,
@@ -88,13 +97,13 @@ def load_data() -> dict:
         "notif_time": "20:00",
     }
 
-def save_data(d: dict):
+def save_data(d: dict) -> None:
     with open(DATA_FILE, "w", encoding="utf-8") as f:
         json.dump(d, f, ensure_ascii=False, indent=2)
 
-db = load_data()
+db: dict = load_data()
 
-def reg(uid: int):
+def reg(uid: int) -> None:
     s = str(uid)
     if s not in db["users"]:
         db["users"].append(s)
@@ -123,7 +132,7 @@ class U(StatesGroup):
 # ══════════════════════════════════════════
 #  ⌨️  КЛАВІАТУРИ
 # ══════════════════════════════════════════
-def kb_main():
+def kb_main() -> ReplyKeyboardMarkup:
     return ReplyKeyboardMarkup(
         keyboard=[[
             KeyboardButton(text="📚 Розклад"),
@@ -137,14 +146,13 @@ def kb_main():
 def kb_days(prefix: str) -> InlineKeyboardMarkup:
     """Кожен день — окремий рядок з повною назвою."""
     wd = datetime.now().weekday()
-    rows = []
-    for i, day in enumerate(DAYS):
-        emoji  = DAY_EMOJI[day]
-        today  = "  ← сьогодні" if i == wd else ""
-        rows.append([InlineKeyboardButton(
-            text=f"{emoji}  {day}{today}",
+    rows = [
+        [InlineKeyboardButton(
+            text=f"{DAY_EMOJI[day]}  {day}{'  ← сьогодні' if i == wd else ''}",
             callback_data=f"{prefix}:{day}",
-        )])
+        )]
+        for i, day in enumerate(DAYS)
+    ]
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 def kb_admin_menu() -> InlineKeyboardMarkup:
@@ -170,7 +178,7 @@ def fmt_schedule(day: str) -> str:
     wd      = datetime.now().weekday()
     today   = DAYS[wd] if wd < 5 else None
     marker  = "  ← сьогодні" if day == today else ""
-    lines   = [f"📅  <b>{DAY_EMOJI[day]}  {day}</b>{marker}\n"]
+    lines: list[str] = [f"📅  <b>{DAY_EMOJI[day]}  {day}</b>{marker}\n"]
     for i, name in enumerate(lessons, 1):
         bell    = BELLS[i - 1]
         hw_mark = "  📝" if str(i) in hw else ""
@@ -183,7 +191,7 @@ def fmt_schedule(day: str) -> str:
     return "\n".join(lines)
 
 def fmt_bells() -> str:
-    lines = ["🔔  <b>Розклад дзвінків</b>\n"]
+    lines: list[str] = ["🔔  <b>Розклад дзвінків</b>\n"]
     for b in BELLS:
         br = f"перерва  {b['b']} хв" if b["b"] else "останній урок"
         lines.append(
@@ -200,7 +208,7 @@ def fmt_hw(day: str) -> str:
             f"✏️  <b>{DAY_EMOJI[day]}  ДЗ на {day}</b>\n\n"
             "🎉  Домашнього завдання немає!"
         )
-    lines = [f"✏️  <b>{DAY_EMOJI[day]}  ДЗ на {day}</b>\n"]
+    lines: list[str] = [f"✏️  <b>{DAY_EMOJI[day]}  ДЗ на {day}</b>\n"]
     for ns, text in sorted(hw.items(), key=lambda x: int(x[0])):
         idx    = int(ns) - 1
         lesson = schedule[idx] if idx < len(schedule) else f"Урок {ns}"
@@ -211,7 +219,7 @@ def fmt_stats() -> str:
     stats = db.get("hw_stats", {})
     if not stats:
         return "📊  <b>Статистика порожня</b>\n\nЩе ніхто не відповів на нагадування."
-    lines = ["📊  <b>Статистика ДЗ</b>\n"]
+    lines: list[str] = ["📊  <b>Статистика ДЗ</b>\n"]
     for uid, dates in stats.items():
         yes   = sum(1 for v in dates.values() if v)
         no    = sum(1 for v in dates.values() if not v)
@@ -232,7 +240,7 @@ dp.include_router(router)
 #  /start
 # ══════════════════════════════════════════
 @router.message(Command("start"))
-async def cmd_start(msg: Message, state: FSMContext):
+async def cmd_start(msg: Message, state: FSMContext) -> None:
     reg(msg.from_user.id)
     await state.set_state(U.main)
     name = msg.from_user.first_name or "учню"
@@ -249,29 +257,32 @@ async def cmd_start(msg: Message, state: FSMContext):
 # ══════════════════════════════════════════
 #  /admin
 # ══════════════════════════════════════════
-def _make_admin(uid: int):
+def _make_admin(uid: int) -> None:
     s = str(uid)
     if s not in db["admins"]:
         db["admins"].append(s)
         save_data(db)
 
 @router.message(Command("admin"))
-async def cmd_admin(msg: Message, state: FSMContext):
+async def cmd_admin(msg: Message, state: FSMContext) -> None:
     parts = msg.text.strip().split(maxsplit=1)
-    pwd   = parts[1].strip() if len(parts) > 1 else None
-    if pwd == ADMIN_PASSWORD:
-        _make_admin(msg.from_user.id)
-        await state.set_state(A.menu)
-        await msg.answer("✅  Ви увійшли як <b>адмін</b>!", reply_markup=kb_main())
-        await msg.answer("🛠  <b>Панель адміна</b>", reply_markup=kb_admin_menu())
-    elif pwd is None:
-        await state.set_state(A.pass_wait)
-        await msg.answer("🔐  Введіть пароль адміна:")
-    else:
-        await msg.answer("❌  Невірний пароль.")
+    pwd: str | None = parts[1].strip() if len(parts) > 1 else None
+
+    # Python 3.14: match / case замість if/elif
+    match pwd:
+        case None:
+            await state.set_state(A.pass_wait)
+            await msg.answer("🔐  Введіть пароль адміна:")
+        case ADMIN_PASSWORD:
+            _make_admin(msg.from_user.id)
+            await state.set_state(A.menu)
+            await msg.answer("✅  Ви увійшли як <b>адмін</b>!", reply_markup=kb_main())
+            await msg.answer("🛠  <b>Панель адміна</b>", reply_markup=kb_admin_menu())
+        case _:
+            await msg.answer("❌  Невірний пароль.")
 
 @router.message(A.pass_wait)
-async def admin_pass(msg: Message, state: FSMContext):
+async def admin_pass(msg: Message, state: FSMContext) -> None:
     if msg.text.strip() == ADMIN_PASSWORD:
         _make_admin(msg.from_user.id)
         await state.set_state(A.menu)
@@ -284,20 +295,20 @@ async def admin_pass(msg: Message, state: FSMContext):
 #  АДМІН — КОЛЛБЕКИ
 # ══════════════════════════════════════════
 @router.callback_query(F.data == "adm:back")
-async def adm_back(cb: CallbackQuery, state: FSMContext):
+async def adm_back(cb: CallbackQuery, state: FSMContext) -> None:
     await state.set_state(A.menu)
     await cb.message.edit_text("🛠  <b>Панель адміна</b>", reply_markup=kb_admin_menu())
     await cb.answer()
 
 @router.callback_query(F.data == "adm:exit")
-async def adm_exit(cb: CallbackQuery, state: FSMContext):
+async def adm_exit(cb: CallbackQuery, state: FSMContext) -> None:
     await state.set_state(U.main)
     await cb.message.edit_text("👋  Вийшли з панелі адміна.")
     await cb.answer()
 
 # ─ Розклад ─
 @router.callback_query(F.data == "adm:sched")
-async def adm_sched(cb: CallbackQuery, state: FSMContext):
+async def adm_sched(cb: CallbackQuery, state: FSMContext) -> None:
     await state.set_state(A.sched_day)
     await cb.message.edit_text(
         "📅  <b>Редагування розкладу</b>\n\nВиберіть день:",
@@ -306,7 +317,7 @@ async def adm_sched(cb: CallbackQuery, state: FSMContext):
     await cb.answer()
 
 @router.callback_query(A.sched_day, F.data.startswith("aeday:"))
-async def adm_sched_day(cb: CallbackQuery, state: FSMContext):
+async def adm_sched_day(cb: CallbackQuery, state: FSMContext) -> None:
     day = cb.data.split(":", 1)[1]
     await state.update_data(edit_day=day)
     cur     = db["schedule"].get(day, [])
@@ -322,7 +333,7 @@ async def adm_sched_day(cb: CallbackQuery, state: FSMContext):
     await cb.answer()
 
 @router.message(A.sched_lessons)
-async def adm_sched_save(msg: Message, state: FSMContext):
+async def adm_sched_save(msg: Message, state: FSMContext) -> None:
     lessons = [l.strip() for l in msg.text.strip().splitlines() if l.strip()]
     if len(lessons) != 7:
         await msg.answer(
@@ -341,7 +352,7 @@ async def adm_sched_save(msg: Message, state: FSMContext):
 
 # ─ ДЗ ─
 @router.callback_query(F.data == "adm:hw")
-async def adm_hw(cb: CallbackQuery, state: FSMContext):
+async def adm_hw(cb: CallbackQuery, state: FSMContext) -> None:
     await state.set_state(A.hw_day)
     await cb.message.edit_text(
         "✏️  <b>Домашнє завдання</b>\n\nВиберіть день:",
@@ -350,18 +361,18 @@ async def adm_hw(cb: CallbackQuery, state: FSMContext):
     await cb.answer()
 
 @router.callback_query(A.hw_day, F.data.startswith("ahday:"))
-async def adm_hw_day(cb: CallbackQuery, state: FSMContext):
+async def adm_hw_day(cb: CallbackQuery, state: FSMContext) -> None:
     day     = cb.data.split(":", 1)[1]
     await state.update_data(hw_day=day)
     lessons = db["schedule"].get(day, [])
     hw      = db["homework"].get(day, {})
-    rows    = []
-    for i, name in enumerate(lessons, 1):
-        mark = "  ✅" if str(i) in hw else ""
-        rows.append([InlineKeyboardButton(
-            text=f"{i}.  {name}{mark}",
+    rows    = [
+        [InlineKeyboardButton(
+            text=f"{i}.  {name}{'  ✅' if str(i) in hw else ''}",
             callback_data=f"ahlesson:{i}",
-        )])
+        )]
+        for i, name in enumerate(lessons, 1)
+    ]
     rows.append([InlineKeyboardButton(text="◀️  Назад", callback_data="adm:hw")])
     await cb.message.edit_text(
         f"✏️  <b>{day}</b> — оберіть урок:\n<i>✅ — вже є ДЗ</i>",
@@ -371,7 +382,7 @@ async def adm_hw_day(cb: CallbackQuery, state: FSMContext):
     await cb.answer()
 
 @router.callback_query(A.hw_lesson, F.data.startswith("ahlesson:"))
-async def adm_hw_lesson(cb: CallbackQuery, state: FSMContext):
+async def adm_hw_lesson(cb: CallbackQuery, state: FSMContext) -> None:
     num = cb.data.split(":", 1)[1]
     await state.update_data(hw_num=num)
     d       = await state.get_data()
@@ -387,24 +398,28 @@ async def adm_hw_lesson(cb: CallbackQuery, state: FSMContext):
     await cb.answer()
 
 @router.message(A.hw_text)
-async def adm_hw_save(msg: Message, state: FSMContext):
+async def adm_hw_save(msg: Message, state: FSMContext) -> None:
     d   = await state.get_data()
     day = d["hw_day"]
     num = d["hw_num"]
     db["homework"].setdefault(day, {})
-    if msg.text.strip() == "-":
-        db["homework"][day].pop(num, None)
-        text = f"🗑  ДЗ для уроку <b>{num}</b> / {day} видалено."
-    else:
-        db["homework"][day][num] = msg.text.strip()
-        text = f"✅  ДЗ для уроку <b>{num}</b> / {day} збережено!"
+
+    # Python 3.14: match / case замість if/else
+    match msg.text.strip():
+        case "-":
+            db["homework"][day].pop(num, None)
+            text = f"🗑  ДЗ для уроку <b>{num}</b> / {day} видалено."
+        case hw_text:
+            db["homework"][day][num] = hw_text
+            text = f"✅  ДЗ для уроку <b>{num}</b> / {day} збережено!"
+
     save_data(db)
     await state.set_state(A.menu)
     await msg.answer(text, reply_markup=kb_admin_menu())
 
 # ─ Час нагадування ─
 @router.callback_query(F.data == "adm:notif")
-async def adm_notif(cb: CallbackQuery, state: FSMContext):
+async def adm_notif(cb: CallbackQuery, state: FSMContext) -> None:
     await state.set_state(A.notif_time)
     await cb.message.edit_text(
         f"⏰  Поточний час нагадування: <b>{db['notif_time']}</b>\n\n"
@@ -415,11 +430,12 @@ async def adm_notif(cb: CallbackQuery, state: FSMContext):
     await cb.answer()
 
 @router.message(A.notif_time)
-async def adm_notif_save(msg: Message, state: FSMContext):
+async def adm_notif_save(msg: Message, state: FSMContext) -> None:
     t = msg.text.strip()
     try:
         h, m = map(int, t.split(":"))
-        assert 0 <= h <= 23 and 0 <= m <= 59
+        if not (0 <= h <= 23 and 0 <= m <= 59):
+            raise ValueError
         db["notif_time"] = f"{h:02d}:{m:02d}"
         save_data(db)
         reschedule_job()
@@ -428,14 +444,14 @@ async def adm_notif_save(msg: Message, state: FSMContext):
             f"✅  Час нагадування: <b>{db['notif_time']}</b>",
             reply_markup=kb_admin_menu(),
         )
-    except Exception:
+    except ValueError:
         await msg.answer(
             "⚠️  Невірний формат. Введіть  <code>ГГ:ХХ</code>  (наприклад  <code>19:30</code>):"
         )
 
 # ─ Статистика ─
 @router.callback_query(F.data == "adm:stats")
-async def adm_stats(cb: CallbackQuery):
+async def adm_stats(cb: CallbackQuery) -> None:
     await cb.message.edit_text(fmt_stats(), reply_markup=kb_admin_menu())
     await cb.answer()
 
@@ -443,7 +459,7 @@ async def adm_stats(cb: CallbackQuery):
 #  👤  КОРИСТУВАЧ
 # ══════════════════════════════════════════
 @router.message(F.text == "📚 Розклад")
-async def user_schedule(msg: Message):
+async def user_schedule(msg: Message) -> None:
     wd = datetime.now().weekday()
     note = f"  (сьогодні — <b>{DAYS[wd]}</b>)" if wd < 5 else "  (сьогодні вихідний 🎉)"
     await msg.answer(
@@ -452,27 +468,30 @@ async def user_schedule(msg: Message):
     )
 
 @router.callback_query(F.data.startswith("sday:"))
-async def user_schedule_day(cb: CallbackQuery):
+async def user_schedule_day(cb: CallbackQuery) -> None:
     day = cb.data.split(":", 1)[1]
-    if day == "back":
-        wd   = datetime.now().weekday()
-        note = f"  (сьогодні — <b>{DAYS[wd]}</b>)" if wd < 5 else "  (сьогодні вихідний 🎉)"
-        await cb.message.edit_text(
-            f"📅  <b>Розклад уроків</b>{note}\n\nВиберіть день:",
-            reply_markup=kb_days("sday"),
-        )
-        await cb.answer()
-        return
-    back = kb_back("sday:back", "◀️  Інший день")
-    await cb.message.edit_text(fmt_schedule(day), reply_markup=back)
+
+    # Python 3.14: match / case
+    match day:
+        case "back":
+            wd   = datetime.now().weekday()
+            note = f"  (сьогодні — <b>{DAYS[wd]}</b>)" if wd < 5 else "  (сьогодні вихідний 🎉)"
+            await cb.message.edit_text(
+                f"📅  <b>Розклад уроків</b>{note}\n\nВиберіть день:",
+                reply_markup=kb_days("sday"),
+            )
+        case _:
+            back = kb_back("sday:back", "◀️  Інший день")
+            await cb.message.edit_text(fmt_schedule(day), reply_markup=back)
+
     await cb.answer()
 
 @router.message(F.text == "🔔 Дзвінки")
-async def user_bells(msg: Message):
+async def user_bells(msg: Message) -> None:
     await msg.answer(fmt_bells())
 
 @router.message(F.text == "✏️ ДЗ")
-async def user_hw(msg: Message, state: FSMContext):
+async def user_hw(msg: Message, state: FSMContext) -> None:
     await state.set_state(U.hw_day)
     await msg.answer(
         "✏️  <b>Домашнє завдання</b>\n\nВиберіть день:",
@@ -480,25 +499,27 @@ async def user_hw(msg: Message, state: FSMContext):
     )
 
 @router.callback_query(F.data.startswith("hday:"))
-async def user_hw_day(cb: CallbackQuery, state: FSMContext):
+async def user_hw_day(cb: CallbackQuery, state: FSMContext) -> None:
     day = cb.data.split(":", 1)[1]
-    if day == "back":
-        await state.set_state(U.hw_day)
-        await cb.message.edit_text(
-            "✏️  <b>Домашнє завдання</b>\n\nВиберіть день:",
-            reply_markup=kb_days("hday"),
-        )
-        await cb.answer()
-        return
-    await state.set_state(U.main)
-    back = kb_back("hday:back", "◀️  Інший день")
-    await cb.message.edit_text(fmt_hw(day), reply_markup=back)
+
+    match day:
+        case "back":
+            await state.set_state(U.hw_day)
+            await cb.message.edit_text(
+                "✏️  <b>Домашнє завдання</b>\n\nВиберіть день:",
+                reply_markup=kb_days("hday"),
+            )
+        case _:
+            await state.set_state(U.main)
+            back = kb_back("hday:back", "◀️  Інший день")
+            await cb.message.edit_text(fmt_hw(day), reply_markup=back)
+
     await cb.answer()
 
 # ══════════════════════════════════════════
 #  🌙  ВЕЧІРНЄ НАГАДУВАННЯ
 # ══════════════════════════════════════════
-async def evening_notify():
+async def evening_notify() -> None:
     wd = datetime.now().weekday()
     if wd >= 4:
         return
@@ -508,12 +529,10 @@ async def evening_notify():
     if not hw:
         return
 
-    hw_lines = []
-    for ns, text in sorted(hw.items(), key=lambda x: int(x[0])):
-        idx    = int(ns) - 1
-        lesson = schedule[idx] if idx < len(schedule) else f"Урок {ns}"
-        hw_lines.append(f"📖  <b>{lesson}</b>\n    {text}")
-
+    hw_lines = [
+        f"📖  <b>{schedule[int(ns) - 1] if int(ns) - 1 < len(schedule) else f'Урок {ns}'}</b>\n    {text}"
+        for ns, text in sorted(hw.items(), key=lambda x: int(x[0]))
+    ]
     body = "\n\n".join(hw_lines)
     text = (
         f"🌙  <b>Вечірня перевірка!</b>\n\n"
@@ -532,18 +551,20 @@ async def evening_notify():
             log.warning(f"Не надіслано {uid}: {e}")
 
 @router.callback_query(F.data.startswith("done:"))
-async def done_answer(cb: CallbackQuery):
-    parts = cb.data.split(":", 2)
-    ans   = parts[1]
-    day   = parts[2]
-    uid   = str(cb.from_user.id)
-    key   = datetime.now().strftime("%Y-%m-%d")
+async def done_answer(cb: CallbackQuery) -> None:
+    _, ans, day = cb.data.split(":", 2)
+    uid = str(cb.from_user.id)
+    key = datetime.now().strftime("%Y-%m-%d")
     db["hw_stats"].setdefault(uid, {})[key] = (ans == "yes")
     save_data(db)
-    if ans == "yes":
-        reply = "🎉  <b>Молодець!</b> Так тримати! Завтра все вийде! 💪"
-    else:
-        reply = "💪  Нічого страшного! Ще є час — зроби до завтра!"
+
+    # Python 3.14: match / case
+    match ans:
+        case "yes":
+            reply = "🎉  <b>Молодець!</b> Так тримати! Завтра все вийде! 💪"
+        case _:
+            reply = "💪  Нічого страшного! Ще є час — зроби до завтра!"
+
     await cb.message.edit_reply_markup(reply_markup=None)
     await cb.message.answer(reply)
     await cb.answer()
@@ -553,7 +574,7 @@ async def done_answer(cb: CallbackQuery):
 # ══════════════════════════════════════════
 scheduler = AsyncIOScheduler(timezone="Europe/Kiev")
 
-def reschedule_job():
+def reschedule_job() -> None:
     if scheduler.get_job("ev"):
         scheduler.remove_job("ev")
     h, m = map(int, db["notif_time"].split(":"))
@@ -561,9 +582,28 @@ def reschedule_job():
     log.info(f"Нагадування заплановано на {db['notif_time']}")
 
 # ══════════════════════════════════════════
+#  🌐  KEEP-ALIVE СЕРВЕР (проти засинання)
+# ══════════════════════════════════════════
+KEEP_ALIVE_PORT: int = int(os.getenv("PORT", 8080))
+
+async def _handle_ping(request: web.Request) -> web.Response:
+    return web.Response(text="OK", status=200)
+
+async def start_keep_alive() -> None:
+    app = web.Application()
+    app.router.add_get("/", _handle_ping)
+    app.router.add_get("/ping", _handle_ping)
+    runner = web.AppRunner(app)
+    await runner.setup()
+    site = web.TCPSite(runner, "0.0.0.0", KEEP_ALIVE_PORT)
+    await site.start()
+    log.info(f"🌐  Keep-alive сервер запущено на порту {KEEP_ALIVE_PORT}")
+
+# ══════════════════════════════════════════
 #  🚀  ЗАПУСК
 # ══════════════════════════════════════════
-async def main():
+async def main() -> None:
+    await start_keep_alive()
     reschedule_job()
     scheduler.start()
     log.info("✅  Бот запущено!")
